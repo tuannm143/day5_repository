@@ -1,0 +1,20 @@
+{
+  "name": "qr-scan-event-log",
+  "version": "1.0.0",
+  "description": "Option A — QR Scan Event Log API + Mini UI (Day 5 capstone)",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js",
+    "test": "jest"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.8.1",
+    "express": "^4.21.2"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0",
+    "supertest": "^7.0.0"
+  },
+  "license": "MIT"
+}
