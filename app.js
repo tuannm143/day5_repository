@@ -1,4 +1,5 @@
 const express = require('express');
+const scansRouter = require('./routes/scans');
 
 const app = express();
 
@@ -12,7 +13,9 @@ app.get('/healthz', (req, res) => {
   res.json({ status: 'ok' });
 });
 
-// Routes (POST /scan, GET /scans) are mounted in later commits.
+// Scan routes (POST /scan; GET /scans added in a later commit). Mounted above
+// the error-handling middleware so route errors can reach it.
+app.use(scansRouter);
 
 // JSON parse error handler: express.json() throws a SyntaxError on malformed
 // bodies; convert it to the project's standard 400 { error } shape.
