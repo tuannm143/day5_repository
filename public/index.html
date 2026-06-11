@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>QR Scan Event Log</title>
+  <style>
+    :root { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
+    body { margin: 0; padding: 1.5rem; background: #f5f6f8; color: #1c1e21; }
+    h1 { font-size: 1.4rem; margin: 0 0 1rem; }
+    .card { background: #fff; border: 1px solid #e2e4e8; border-radius: 8px; padding: 1rem 1.25rem; margin-bottom: 1.25rem; }
+    form { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0.75rem; align-items: end; }
+    label { display: block; font-size: 0.8rem; color: #555; margin-bottom: 0.25rem; }
+    input, select, button { font-size: 0.95rem; padding: 0.5rem; border: 1px solid #c8ccd2; border-radius: 6px; width: 100%; box-sizing: border-box; }
+    button { cursor: pointer; background: #1a73e8; color: #fff; border-color: #1a73e8; font-weight: 600; }
+    button.secondary { background: #fff; color: #1a73e8; }
+    button:hover { filter: brightness(0.95); }
+    .toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; }
+    .msg { margin-top: 0.75rem; font-size: 0.9rem; min-height: 1.2em; }
+    .msg.error { color: #c5221f; }
+    .msg.success { color: #137333; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+    th, td { text-align: left; padding: 0.5rem 0.6rem; border-bottom: 1px solid #eceef1; white-space: nowrap; }
+    th { background: #fafbfc; color: #555; font-weight: 600; }
+    tbody tr:hover { background: #f7f9fc; }
+    .muted { color: #888; }
+    .badge { display: inline-block; padding: 0.1rem 0.45rem; border-radius: 10px; background: #eef1f5; font-size: 0.75rem; }
+  </style>
+</head>
+<body>
+  <h1>QR Scan Event Log</h1>
+
+  <!-- New scan form -->
+  <div class="card">
+    <form id="scan-form">
+      <div>
+        <label for="qr_code">qr_code</label>
+        <input id="qr_code" name="qr_code" placeholder="QR-A1B2C3" autocomplete="off" />
+      </div>
+      <div>
+        <label for="event_type">event_type</label>
+        <select id="event_type" name="event_type">
+          <option value="IN">IN</option>
+          <option value="OUT">OUT</option>
+          <option value="MOVE">MOVE</option>
+        </select>
+      </div>
+      <div>
+        <label for="location">location</label>
+        <input id="location" name="location" placeholder="WH-01" maxlength="20" autocomplete="off" />
+      </div>
+      <div>
+        <label for="scanned_by">scanned_by</label>
+        <input id="scanned_by" name="scanned_by" placeholder="nguyen.van.a" maxlength="50" autocomplete="off" />
+      </div>
+      <div>
+        <button type="submit">Log scan</button>
+      </div>
+    </form>
+    <div id="form-msg" class="msg"></div>
+  </div>
+
+  <!-- Recent scans -->
+  <div class="card">
+    <div class="toolbar">
+      <strong>Recent scans <span id="total" class="muted"></span></strong>
+      <button id="refresh-btn" class="secondary" style="width:auto;">Refresh</button>
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th>id</th>
+          <th>qr_code</th>
+          <th>event_type</th>
+          <th>location</th>
+          <th>scanned_by</th>
+          <th>scanned_at</th>
+        </tr>
+      </thead>
+      <tbody id="scans-body">
+        <tr><td colspan="6" class="muted">Loading…</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <script>
+    const POLL_MS = 3000;
+    const formEl = document.getElementById('scan-form');
+    const msgEl = document.getElementById('form-msg');
+    const bodyEl = document.getElementById('scans-body');
+    const totalEl = document.getElementById('total');
+
+    // Escape text before inserting into the table to avoid HTML injection.
+    function esc(value) {
+      return String(value == null ? '' : value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+    }
+
+    function setMsg(text, kind) {
+      msgEl.textContent = text || '';
+      msgEl.className = 'msg' + (kind ? ' ' + kind : '');
+    }
+
+    // Fetch the most recent scans and render them newest-first (the API already
+    // sorts). Shared by the poller and the manual Refresh button.
+    async function loadScans() {
+      try {
+        const res = await fetch('/scans?page=1&limit=20');
+        const json = await res.json();
+        const rows = json.data || [];
+        totalEl.textContent = '(' + (json.total ?? rows.length) + ' total)';
+
+        if (rows.length === 0) {
+          bodyEl.innerHTML = '<tr><td colspan="6" class="muted">No scans yet.</td></tr>';
+          return;
+        }
+        bodyEl.innerHTML = rows.map(function (r) {
+          return '<tr>' +
+            '<td>' + esc(r.id) + '</td>' +
+            '<td>' + esc(r.qr_code) + '</td>' +
+            '<td><span class="badge">' + esc(r.event_type) + '</span></td>' +
+            '<td>' + esc(r.location) + '</td>' +
+            '<td>' + esc(r.scanned_by) + '</td>' +
+            '<td class="muted">' + esc(r.scanned_at) + '</td>' +
+            '</tr>';
+        }).join('');
+      } catch (err) {
+        bodyEl.innerHTML = '<tr><td colspan="6" class="error">Failed to load scans.</td></tr>';
+      }
+    }
+
+    // Submit a new scan. On 201 clear the form and refresh; on 400 show the
+    // server's error message inline.
+    formEl.addEventListener('submit', async function (event) {
+      event.preventDefault();
+      setMsg('', null);
+
+      const payload = {
+        qr_code: formEl.qr_code.value,
+        event_type: formEl.event_type.value,
+        location: formEl.location.value,
+        scanned_by: formEl.scanned_by.value,
+      };
+
+      try {
+        const res = await fetch('/scan', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        const json = await res.json();
+
+        if (res.status === 201) {
+          setMsg('Logged scan #' + json.id, 'success');
+          formEl.qr_code.value = '';
+          formEl.location.value = '';
+          formEl.scanned_by.value = '';
+          formEl.event_type.value = 'IN';
+          formEl.qr_code.focus();
+          loadScans();
+        } else {
+          setMsg(json.error || 'Request failed (' + res.status + ')', 'error');
+        }
+      } catch (err) {
+        setMsg('Network error — is the server running?', 'error');
+      }
+    });
+
+    document.getElementById('refresh-btn').addEventListener('click', loadScans);
+
+    // Initial load + poll every 3 seconds.
+    loadScans();
+    setInterval(loadScans, POLL_MS);
+  </script>
+</body>
+</html>
