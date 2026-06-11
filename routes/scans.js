@@ -12,6 +12,12 @@ const insertScan = db.prepare(
 );
 const getScanById = db.prepare('SELECT * FROM scan_events WHERE id = ?');
 
+// Newest first: scanned_at is the primary key, id DESC breaks same-timestamp ties.
+const listScans = db.prepare(
+  'SELECT * FROM scan_events ORDER BY scanned_at DESC, id DESC LIMIT ? OFFSET ?'
+);
+const countScans = db.prepare('SELECT COUNT(*) AS total FROM scan_events');
+
 // POST /scan — log a scan event. scanned_at is never taken from the client;
 // the schema default fills it, so we re-SELECT the stored row to return it.
 router.post('/scan', (req, res) => {
@@ -23,6 +29,20 @@ router.post('/scan', (req, res) => {
   const info = insertScan.run(result.value);
   const row = getScanById.get(info.lastInsertRowid);
   return res.status(201).json(row);
+});
+
+// GET /scans — recent events, newest first, paginated. Happy path only:
+// defaults page=1 / limit=20. Strict param validation (limit<=100, positive
+// integers, 400 on bad input) is added in a later commit.
+router.get('/scans', (req, res) => {
+  const page = parseInt(req.query.page, 10) || 1;
+  const limit = parseInt(req.query.limit, 10) || 20;
+  const offset = (page - 1) * limit;
+
+  const data = listScans.all(limit, offset);
+  const { total } = countScans.get();
+
+  return res.json({ data, page, limit, total });
 });
 
 module.exports = router;
