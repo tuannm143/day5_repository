@@ -1,6 +1,6 @@
 const express = require('express');
 const db = require('../db');
-const { validateScanBody } = require('../validators/scan');
+const { validateScanBody, validatePagination } = require('../validators/scan');
 
 const router = express.Router();
 
@@ -31,12 +31,15 @@ router.post('/scan', (req, res) => {
   return res.status(201).json(row);
 });
 
-// GET /scans — recent events, newest first, paginated. Happy path only:
-// defaults page=1 / limit=20. Strict param validation (limit<=100, positive
-// integers, 400 on bad input) is added in a later commit.
+// GET /scans — recent events, newest first, paginated. page/limit are validated
+// as positive integers (page>=1, 1<=limit<=100); invalid values return 400.
 router.get('/scans', (req, res) => {
-  const page = parseInt(req.query.page, 10) || 1;
-  const limit = parseInt(req.query.limit, 10) || 20;
+  const result = validatePagination(req.query);
+  if (!result.ok) {
+    return res.status(400).json({ error: result.error });
+  }
+
+  const { page, limit } = result.value;
   const offset = (page - 1) * limit;
 
   const data = listScans.all(limit, offset);

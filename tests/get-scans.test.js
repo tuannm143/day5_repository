@@ -156,4 +156,183 @@ describe('GET /scans', () => {
       scanned_at: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
     });
   });
+
+  // ── Pagination parameter validation — 400 errors ─────────────────────────────
+
+  describe('parameter validation errors', () => {
+    it('?limit=101 returns 400 with an error mentioning "limit"', async () => {
+      const res = await request(app).get('/scans?limit=101');
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).toEqual(expect.stringContaining('limit'));
+    });
+
+    it('?limit=101 returns the exact error message', async () => {
+      const res = await request(app).get('/scans?limit=101');
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).toBe('limit must be an integer between 1 and 100');
+    });
+
+    it('?page=0 returns 400 with an error mentioning "page"', async () => {
+      const res = await request(app).get('/scans?page=0');
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).toEqual(expect.stringContaining('page'));
+    });
+
+    it('?page=0 returns the exact error message', async () => {
+      const res = await request(app).get('/scans?page=0');
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).toBe('page must be an integer >= 1');
+    });
+
+    it('?limit=0 returns 400 with an error mentioning "limit"', async () => {
+      const res = await request(app).get('/scans?limit=0');
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).toEqual(expect.stringContaining('limit'));
+    });
+
+    it('?page=-1 returns 400 with an error mentioning "page"', async () => {
+      const res = await request(app).get('/scans?page=-1');
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).toEqual(expect.stringContaining('page'));
+    });
+
+    it('?limit=abc returns 400 with an error mentioning "limit"', async () => {
+      const res = await request(app).get('/scans?limit=abc');
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).toEqual(expect.stringContaining('limit'));
+    });
+
+    it('?page=1.5 returns 400 with an error mentioning "page"', async () => {
+      const res = await request(app).get('/scans?page=1.5');
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).toEqual(expect.stringContaining('page'));
+    });
+  });
+
+  // ── Accepted boundary: limit=100 ─────────────────────────────────────────────
+
+  describe('boundary: limit=100 is accepted', () => {
+    it('?limit=100 returns 200 and echoes limit === 100', async () => {
+      await seedScan('QR-AAAAA1');
+      await seedScan('QR-AAAAA2');
+
+      const res = await request(app).get('/scans?limit=100');
+
+      expect(res.status).toBe(200);
+      expect(res.body.limit).toBe(100);
+    });
+  });
+
+  // ── Pagination slicing ────────────────────────────────────────────────────────
+  //
+  // Seed 25 rows using QR-000001 … QR-000025 (6-digit zero-padded — satisfies
+  // the QR_CODE_RE = /^QR-[A-Za-z0-9]{6}$/ requirement). Request page 2 with
+  // limit 10: the response must contain exactly 10 rows, total === 25, and the
+  // pagination envelope must echo page and limit back to the caller.
+
+  describe('pagination slicing', () => {
+    it('seeds 25 rows: every POST /scan returns 201', async () => {
+      for (let i = 1; i <= 25; i++) {
+        const qr_code = 'QR-' + String(i).padStart(6, '0');
+        const res = await request(app)
+          .post('/scan')
+          .send({ ...SEED_BASE, qr_code });
+        expect(res.status).toBe(201);
+      }
+    });
+
+    it('GET /scans?limit=10&page=2 with 25 rows returns status 200', async () => {
+      for (let i = 1; i <= 25; i++) {
+        await seedScan('QR-' + String(i).padStart(6, '0'));
+      }
+
+      const res = await request(app).get('/scans?limit=10&page=2');
+
+      expect(res.status).toBe(200);
+    });
+
+    it('GET /scans?limit=10&page=2 with 25 rows returns total === 25', async () => {
+      for (let i = 1; i <= 25; i++) {
+        await seedScan('QR-' + String(i).padStart(6, '0'));
+      }
+
+      const res = await request(app).get('/scans?limit=10&page=2');
+
+      expect(res.body.total).toBe(25);
+    });
+
+    it('GET /scans?limit=10&page=2 with 25 rows echoes page === 2', async () => {
+      for (let i = 1; i <= 25; i++) {
+        await seedScan('QR-' + String(i).padStart(6, '0'));
+      }
+
+      const res = await request(app).get('/scans?limit=10&page=2');
+
+      expect(res.body.page).toBe(2);
+    });
+
+    it('GET /scans?limit=10&page=2 with 25 rows echoes limit === 10', async () => {
+      for (let i = 1; i <= 25; i++) {
+        await seedScan('QR-' + String(i).padStart(6, '0'));
+      }
+
+      const res = await request(app).get('/scans?limit=10&page=2');
+
+      expect(res.body.limit).toBe(10);
+    });
+
+    it('GET /scans?limit=10&page=2 with 25 rows returns exactly 10 rows in data', async () => {
+      for (let i = 1; i <= 25; i++) {
+        await seedScan('QR-' + String(i).padStart(6, '0'));
+      }
+
+      const res = await request(app).get('/scans?limit=10&page=2');
+
+      expect(res.body.data).toHaveLength(10);
+    });
+
+    it('GET /scans?limit=10&page=2 with 25 rows: ids in the page are strictly descending', async () => {
+      for (let i = 1; i <= 25; i++) {
+        await seedScan('QR-' + String(i).padStart(6, '0'));
+      }
+
+      const res = await request(app).get('/scans?limit=10&page=2');
+
+      const ids = res.body.data.map((row) => row.id);
+      for (let i = 0; i < ids.length - 1; i++) {
+        expect(ids[i]).toBeGreaterThan(ids[i + 1]);
+      }
+    });
+
+    it('GET /scans?limit=10&page=2 contains the middle window (rows 11-20 newest-first)', async () => {
+      for (let i = 1; i <= 25; i++) {
+        await seedScan('QR-' + String(i).padStart(6, '0'));
+      }
+
+      // Page 1 gives the 10 highest ids; page 2 must contain the next 10.
+      const page1 = await request(app).get('/scans?limit=10&page=1');
+      const page2 = await request(app).get('/scans?limit=10&page=2');
+
+      const page1Ids = new Set(page1.body.data.map((r) => r.id));
+      const page2Ids = page2.body.data.map((r) => r.id);
+
+      // No id from page 2 should appear on page 1.
+      for (const id of page2Ids) {
+        expect(page1Ids.has(id)).toBe(false);
+      }
+
+      // Every page-2 id must be lower than every page-1 id (strict ordering).
+      const minPage1Id = Math.min(...page1Ids);
+      const maxPage2Id = Math.max(...page2Ids);
+      expect(maxPage2Id).toBeLessThan(minPage1Id);
+    });
+  });
 });
